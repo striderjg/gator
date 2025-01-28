@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-const cfgFileaname = ".gaterconfig.json"
+const cfgFileaname = ".gatorconfig.json"
 
 type Config struct {
 	Db_url       string
@@ -31,20 +31,20 @@ func (c *Config) SetUser(currentUser string) error {
 	return nil
 }
 
-func Read() (Config, error) {
+func Read() (*Config, error) {
 	var cfgReturn Config
 	homePath, err := os.UserHomeDir()
 	if err != nil {
-		return Config{}, fmt.Errorf("error getting path to home directory: %w", err)
+		return nil, fmt.Errorf("error getting path to home directory: %w", err)
 	}
 	configFile, err := os.ReadFile(filepath.Join(homePath, cfgFileaname))
 	if err != nil {
-		return Config{}, fmt.Errorf("error reading config file: %w", err)
+		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
 	if err := json.Unmarshal(configFile, &cfgReturn); err != nil {
-		return Config{}, fmt.Errorf("error unmarshaling config file: %w", err)
+		return nil, fmt.Errorf("error unmarshaling config file: %w", err)
 	}
 
-	return cfgReturn, nil
+	return &cfgReturn, nil
 }
