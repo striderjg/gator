@@ -61,6 +61,41 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		return errors.New("the addfeed handler expects two arguments: Usage: addfeed NAME URL")
+	}
+	ctx := context.Background()
+	_, err := fetchFeed(ctx, cmd.args[1])
+	if err != nil {
+		return fmt.Errorf("error fetching feed: %w", err)
+	}
+	usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
+	if err != nil {
+		return fmt.Errorf("error fetching current user: %w", err)
+	}
+
+	feedEntry, err := s.db.CreateFeed(ctx, database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      cmd.args[0],
+		Url:       cmd.args[1],
+		UserID:    usr.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating feed entry: %w", err)
+	}
+
+	fmt.Println("Added to feeds:")
+	fmt.Println("=================================")
+	fmt.Printf("id: %v, created_at: %v, updated_at: %v\n", feedEntry.ID, feedEntry.CreatedAt, feedEntry.UpdatedAt)
+	fmt.Println("\tname: ", feedEntry.Name)
+	fmt.Println("\turl: ", feedEntry.Url)
+	fmt.Println("\tuser_id: ", feedEntry.UserID)
+	return nil
+}
+
 func handlerAgg(s *state, cmd command) error {
 	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
 	if err != nil {
@@ -252,6 +287,7 @@ func main() {
 	cmds.register("users", handlerGetUsers)
 	cmds.register("reset", handlerReset)
 	cmds.register("agg", handlerAgg)
+	cmds.register("addfeed", handlerAddFeed)
 
 	// -- Start
 	if len(os.Args) < 2 {
