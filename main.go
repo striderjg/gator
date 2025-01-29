@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
+	"net/http"
 	"os"
 	"time"
 
@@ -58,6 +61,27 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAgg(s *state, cmd command) error {
+	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return fmt.Errorf("error fetching feed: %w", err)
+	}
+	//feed = feed
+
+	fmt.Printf("<TITLE>%v</TITLE>\n", feed.Channel.Title)
+	fmt.Printf("<LINK>%v</LINK>\n", feed.Channel.Link)
+	fmt.Printf("<Description>%v</Description>\n", feed.Channel.Description)
+	fmt.Println("============================================================")
+
+	for _, item := range feed.Channel.Item {
+		fmt.Printf("\t<TITLE>%v</TITLE>\n", item.Title)
+		fmt.Printf("\t<LINK>%v</LINK>\n", item.Link)
+		fmt.Printf("\t<Description>%v</Description>\n", item.Description)
+		fmt.Println("============================================================")
+	}
+	return nil
+}
+
 func handlerGetUsers(s *state, cmd command) error {
 	ctx := context.Background()
 	users, err := s.db.GetUsers(ctx)
@@ -106,6 +130,101 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
+// ============================== Utility Functions ==================================================
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+	req.Header.Set("User-Agent", "gator")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error getting responce: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return nil, errors.New("bad Status Code from response")
+	}
+
+	/*
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			return nil, fmt.Errorf("Error reading response body: %w", err)
+		}
+		fmt.Println("Raw XML Body: ", string(body))
+		if err := xml.Unmarshal(body, &feed); err != nil {
+			return nil, fmt.Errorf("error during Unmarshaling: %w", err)
+		}
+	*/
+
+	var feed RSSFeed
+	//var feed TestRSSFeed
+	//var feed TestRSSFeed
+	//var feedT TestChannel
+
+	decoder := xml.NewDecoder(res.Body)
+	if err := decoder.Decode(&feed); err != nil {
+		return nil, fmt.Errorf("error decoding RSSFeed: %w", err)
+	}
+	// ===================== TODO:  Try to figure out what's going on with channel link
+	//  == Leaving the comments in for later use.
+	/*
+			for {
+				t, err := decoder.Token()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return nil, fmt.Errorf("error reading XML token: %w", err)
+				}
+				switch elem := t.(type) {
+				case xml.StartElement:
+					fmt.Println("In Start Element")
+					if elem.Name.Local == "link" {
+						var link string
+						fmt.Println(elem.Name)
+						if err := decoder.DecodeElement(&link, &elem); err != nil {
+							return nil, fmt.Errorf("error decoding <link>: %w", err)
+						}
+						fmt.Println("Raw <link> value: ", link)
+					}
+				case xml.CharData:
+					fmt.Println("CharData")
+					fmt.Println(elem)
+					fmt.Println("Lenght:", len(elem))
+					for data := range elem {
+						fmt.Println(string(data))
+					}
+				default:
+					fmt.Println("In Default")
+					//var decodedElem string
+					//if err := decoder.DecodeElement(&decodedElem, &elem); err != nil {
+					//	return nil, fmt.Errorf("error decoding <link>: %w", err)
+					//}
+					fmt.Println(elem)
+				}
+			}
+
+		fmt.Println("Decoded Link: ", feed.Channel.Link)
+	*/
+
+	//fmt.Println(feed.Channel.Link)
+
+	// TODO:  Remove workaround when figure out what's going on with Channel.Link
+	if feed.Channel.Link == "" {
+		feed.Channel.Link = feedURL
+	}
+
+	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
+	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
+	for i, _ := range feed.Channel.Item {
+		feed.Channel.Item[i].Title = html.UnescapeString(feed.Channel.Item[i].Title)
+		feed.Channel.Item[i].Description = html.UnescapeString(feed.Channel.Item[i].Description)
+	}
+
+	return &feed, nil
+}
+
 // . ================================ ENTRY POINT ============================================
 func main() {
 	// --------- INIT
@@ -132,6 +251,7 @@ func main() {
 	cmds.register("register", handlerRegister)
 	cmds.register("users", handlerGetUsers)
 	cmds.register("reset", handlerReset)
+	cmds.register("agg", handlerAgg)
 
 	// -- Start
 	if len(os.Args) < 2 {
