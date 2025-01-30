@@ -61,7 +61,7 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, usr database.User) error {
 	if len(cmd.args) < 2 {
 		return errors.New("the addfeed handler expects two arguments: Usage: addfeed NAME URL")
 	}
@@ -70,10 +70,10 @@ func handlerAddFeed(s *state, cmd command) error {
 	if err != nil {
 		return fmt.Errorf("error fetching feed: %w", err)
 	}
-	usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
-	if err != nil {
-		return fmt.Errorf("error fetching current user: %w", err)
-	}
+	//usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
+	//if err != nil {
+	//	return fmt.Errorf("error fetching current user: %w", err)
+	//}
 
 	feedEntry, err := s.db.CreateFeed(ctx, database.CreateFeedParams{
 		ID:        uuid.New(),
@@ -121,7 +121,7 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, usr database.User) error {
 	if len(cmd.args) < 1 {
 		return errors.New("follow expect an argument.  Usage: follow URL")
 	}
@@ -132,10 +132,10 @@ func handlerFollow(s *state, cmd command) error {
 		return fmt.Errorf("error retrieving feed: %w", err)
 	}
 
-	usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
-	if err != nil {
-		return fmt.Errorf("error retrieving current user: %w", err)
-	}
+	//usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
+	//if err != nil {
+	//	return fmt.Errorf("error retrieving current user: %w", err)
+	//}
 
 	ff, err := s.db.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
 		ID:        uuid.New(),
@@ -152,12 +152,12 @@ func handlerFollow(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowing(s *state, cmd command) error {
-	ctx := context.Background()
-	usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
-	if err != nil {
-		return fmt.Errorf("error retrieving current user: %w", err)
-	}
+func handlerFollowing(s *state, cmd command, usr database.User) error {
+	//ctx := context.Background()
+	//usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
+	//if err != nil {
+	//	return fmt.Errorf("error retrieving current user: %w", err)
+	//}
 
 	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), usr.ID)
 	if err != nil {
@@ -243,6 +243,17 @@ func handlerRegister(s *state, cmd command) error {
 }
 
 // ============================== Utility Functions ==================================================
+
+func middlewareLoggedIn(handler func(s *state, cmd command, usr database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		usr, err := s.db.GetUser(context.Background(), s.cfg.Current_user)
+		if err != nil {
+			return fmt.Errorf("error fetching current user: %w", err)
+		}
+		return handler(s, cmd, usr)
+	}
+}
+
 func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
 	if err != nil {
@@ -364,10 +375,10 @@ func main() {
 	cmds.register("users", handlerGetUsers)
 	cmds.register("reset", handlerReset)
 	cmds.register("agg", handlerAgg)
-	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	cmds.register("feeds", handlerFeeds)
-	cmds.register("follow", handlerFollow)
-	cmds.register("following", handlerFollowing)
+	cmds.register("follow", middlewareLoggedIn(handlerFollow))
+	cmds.register("following", middlewareLoggedIn(handlerFollowing))
 
 	// -- Start
 	if len(os.Args) < 2 {
