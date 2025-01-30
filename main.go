@@ -96,6 +96,21 @@ func handlerAddFeed(s *state, cmd command) error {
 	return nil
 }
 
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return fmt.Errorf("error getting feeds from db: %w", err)
+	}
+	for _, feed := range feeds {
+		fmt.Println("1)")
+		fmt.Println("\tName: ", feed.Name)
+		fmt.Println("\tUrl: ", feed.Url)
+		fmt.Println("\tOwner: ", feed.Username)
+		fmt.Println("=================================================")
+	}
+	return nil
+}
+
 func handlerAgg(s *state, cmd command) error {
 	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
 	if err != nil {
@@ -288,6 +303,7 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("agg", handlerAgg)
 	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("feeds", handlerFeeds)
 
 	// -- Start
 	if len(os.Args) < 2 {
