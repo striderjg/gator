@@ -153,7 +153,13 @@ func handlerFollow(s *state, cmd command) error {
 }
 
 func handlerFollowing(s *state, cmd command) error {
-	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), s.cfg.Current_user)
+	ctx := context.Background()
+	usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
+	if err != nil {
+		return fmt.Errorf("error retrieving current user: %w", err)
+	}
+
+	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), usr.ID)
 	if err != nil {
 		fmt.Errorf("error retrieving follows for user: %w", err)
 	}
