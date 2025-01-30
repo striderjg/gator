@@ -86,6 +86,16 @@ func handlerAddFeed(s *state, cmd command) error {
 	if err != nil {
 		return fmt.Errorf("error creating feed entry: %w", err)
 	}
+	_, err = s.db.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    usr.ID,
+		FeedID:    feedEntry.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating feed_follows entry: %w", err)
+	}
 
 	fmt.Println("Added to feeds:")
 	fmt.Println("=================================")
@@ -108,6 +118,52 @@ func handlerFeeds(s *state, cmd command) error {
 		fmt.Println("\tOwner: ", feed.Username)
 		fmt.Println("=================================================")
 	}
+	return nil
+}
+
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.args) < 1 {
+		return errors.New("follow expect an argument.  Usage: follow URL")
+	}
+
+	ctx := context.Background()
+	feed, err := s.db.GetFeed(ctx, cmd.args[0])
+	if err != nil {
+		return fmt.Errorf("error retrieving feed: %w", err)
+	}
+
+	usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
+	if err != nil {
+		return fmt.Errorf("error retrieving current user: %w", err)
+	}
+
+	ff, err := s.db.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    usr.ID,
+		FeedID:    feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating feed_follows entry: %w", err)
+	}
+
+	fmt.Printf("User %v is now following %v\n", ff.UserName, ff.FeedName)
+	return nil
+}
+
+func handlerFollowing(s *state, cmd command) error {
+	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), s.cfg.Current_user)
+	if err != nil {
+		fmt.Errorf("error retrieving follows for user: %w", err)
+	}
+
+	fmt.Printf("User: %v is following:\n", s.cfg.Current_user)
+	fmt.Println("===============================")
+	for _, feed := range feeds {
+		fmt.Println("  * ", feed.FeedName)
+	}
+
 	return nil
 }
 
@@ -304,6 +360,8 @@ func main() {
 	cmds.register("agg", handlerAgg)
 	cmds.register("addfeed", handlerAddFeed)
 	cmds.register("feeds", handlerFeeds)
+	cmds.register("follow", handlerFollow)
+	cmds.register("following", handlerFollowing)
 
 	// -- Start
 	if len(os.Args) < 2 {
