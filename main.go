@@ -70,10 +70,6 @@ func handlerAddFeed(s *state, cmd command, usr database.User) error {
 	if err != nil {
 		return fmt.Errorf("error fetching feed: %w", err)
 	}
-	//usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
-	//if err != nil {
-	//	return fmt.Errorf("error fetching current user: %w", err)
-	//}
 
 	feedEntry, err := s.db.CreateFeed(ctx, database.CreateFeedParams{
 		ID:        uuid.New(),
@@ -121,6 +117,30 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
+func handlerUnfollow(s *state, cmd command, usr database.User) error {
+	if len(cmd.args) < 1 {
+		return errors.New("unfollow expects an argument.  Usage: unfollow URL")
+	}
+
+	ctx := context.Background()
+	feed, err := s.db.GetFeed(ctx, cmd.args[0])
+	if err != nil {
+		return fmt.Errorf("error retrieving feed: %w", err)
+	}
+
+	// TODO:  Change query and return more useful stuff for a action performed message
+
+	_, err = s.db.DeleteFeedFollow(ctx, database.DeleteFeedFollowParams{
+		UserID: usr.ID,
+		FeedID: feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error deleting feed_follow entry: %w", err)
+	}
+
+	return nil
+}
+
 func handlerFollow(s *state, cmd command, usr database.User) error {
 	if len(cmd.args) < 1 {
 		return errors.New("follow expect an argument.  Usage: follow URL")
@@ -131,11 +151,6 @@ func handlerFollow(s *state, cmd command, usr database.User) error {
 	if err != nil {
 		return fmt.Errorf("error retrieving feed: %w", err)
 	}
-
-	//usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
-	//if err != nil {
-	//	return fmt.Errorf("error retrieving current user: %w", err)
-	//}
 
 	ff, err := s.db.CreateFeedFollow(ctx, database.CreateFeedFollowParams{
 		ID:        uuid.New(),
@@ -153,12 +168,6 @@ func handlerFollow(s *state, cmd command, usr database.User) error {
 }
 
 func handlerFollowing(s *state, cmd command, usr database.User) error {
-	//ctx := context.Background()
-	//usr, err := s.db.GetUser(ctx, s.cfg.Current_user)
-	//if err != nil {
-	//	return fmt.Errorf("error retrieving current user: %w", err)
-	//}
-
 	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), usr.ID)
 	if err != nil {
 		fmt.Errorf("error retrieving follows for user: %w", err)
@@ -379,6 +388,7 @@ func main() {
 	cmds.register("feeds", handlerFeeds)
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
 	cmds.register("following", middlewareLoggedIn(handlerFollowing))
+	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 
 	// -- Start
 	if len(os.Args) < 2 {
