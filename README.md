@@ -1,4 +1,5 @@
 # gator
+Name: gator
 Desc: Aggregates blogs for multiple users with a CLI.  Not for real use.  Exersize only.
 TODO:  FIX DOCS:)
 
