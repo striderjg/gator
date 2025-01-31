@@ -9,6 +9,8 @@ import (
 	"html"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -183,23 +185,41 @@ func handlerFollowing(s *state, cmd command, usr database.User) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if len(cmd.args) < 1 {
+		return errors.New("agg expects an argument of type [digit][s|m|h].  Usage: agg DURATION")
+	}
+	interval, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
-		return fmt.Errorf("error fetching feed: %w", err)
+		return fmt.Errorf("error parsing time duration: %w", err)
 	}
-	//feed = feed
+	if interval.Seconds() < 1 {
+		return errors.New("time duration must be greater then 1 second")
+	}
 
-	fmt.Printf("<TITLE>%v</TITLE>\n", feed.Channel.Title)
-	fmt.Printf("<LINK>%v</LINK>\n", feed.Channel.Link)
-	fmt.Printf("<Description>%v</Description>\n", feed.Channel.Description)
-	fmt.Println("============================================================")
+	fmt.Printf("Collecting feeds every %v\n", interval.String())
+	ticker := time.NewTicker(interval)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 
-	for _, item := range feed.Channel.Item {
-		fmt.Printf("\t<TITLE>%v</TITLE>\n", item.Title)
-		fmt.Printf("\t<LINK>%v</LINK>\n", item.Link)
-		fmt.Printf("\t<Description>%v</Description>\n", item.Description)
+	/*
+		feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+		if err != nil {
+			return fmt.Errorf("error fetching feed: %w", err)
+		}
+
+		fmt.Printf("<TITLE>%v</TITLE>\n", feed.Channel.Title)
+		fmt.Printf("<LINK>%v</LINK>\n", feed.Channel.Link)
+		fmt.Printf("<Description>%v</Description>\n", feed.Channel.Description)
 		fmt.Println("============================================================")
-	}
+
+		for _, item := range feed.Channel.Item {
+			fmt.Printf("\t<TITLE>%v</TITLE>\n", item.Title)
+			fmt.Printf("\t<LINK>%v</LINK>\n", item.Link)
+			fmt.Printf("\t<Description>%v</Description>\n", item.Description)
+			fmt.Println("============================================================")
+		}
+	*/
 	return nil
 }
 
@@ -251,7 +271,104 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
+func handlerBrowse(s *state, cmd command, usr database.User) error {
+	var lim int32 = 2
+	if len(cmd.args) > 0 {
+		limInt, err := strconv.Atoi(cmd.args[0])
+		if err != nil {
+			return fmt.Errorf("error converting argument to integer.  browser expect an int: %w", err)
+		}
+		lim = int32(limInt)
+	}
+	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: usr.ID,
+		Limit:  lim,
+	})
+	if err != nil {
+		return fmt.Errorf("error retrieving posts for user: %w", err)
+	}
+	for _, post := range posts {
+		fmt.Println("++++++++++++++++++++++++++++++++++++++++++++++++++++")
+		fmt.Println(post.Title)
+		fmt.Println(post.Url)
+		fmt.Println("====================================================")
+		fmt.Println(post.Description)
+		fmt.Println("")
+	}
+
+	return nil
+}
+
+func handlerTest(s *state, cmd command) error {
+	if err := scrapeFeeds(s); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ============================== Utility Functions ==================================================
+
+func scrapeFeeds(s *state) error {
+	ctx := context.Background()
+	feed, err := s.db.GetNextFeedToFetch(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting next feed to fetch: %w", err)
+	}
+
+	s.db.MarkFeedFetched(ctx, database.MarkFeedFetchedParams{
+		ID:   feed.ID,
+		Time: time.Now(),
+	})
+	rssFeed, err := fetchFeed(ctx, feed.Url)
+	if err != nil {
+		return fmt.Errorf("error fetching feed at (%v): %w", feed.Url, err)
+	}
+
+	for _, rssItem := range rssFeed.Channel.Item {
+		pubDate := sql.NullTime{}
+		if rssItem.PubDate != "" {
+			pubDate.Valid = true
+			pubDate.Time, err = time.Parse(time.RFC1123, rssItem.PubDate)
+			if err != nil {
+				pubDate.Time, err = time.Parse(time.RFC1123Z, rssItem.PubDate)
+				if err != nil {
+					// TODO:  LOG ERROR
+					fmt.Println("============= ERROR ==============")
+					fmt.Println("Failed to parse Publish Date")
+					fmt.Println("==================================")
+					pubDate.Time = time.Time{}
+					pubDate.Valid = false
+				}
+			}
+		}
+
+		retPost, err := s.db.CreatePost(ctx, database.CreatePostParams{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Title:       rssItem.Title,
+			Url:         rssItem.Link,
+			Description: rssItem.Description,
+			PublishedAt: pubDate,
+			FeedID:      feed.ID,
+		})
+		if err != nil {
+			if !strings.Contains(err.Error(), "duplicate key value") {
+				// TODO:  LOG ERROR
+				fmt.Println("=========== ERROR ===========")
+				fmt.Printf("Error creating Post: %v\n", rssItem.Title)
+				fmt.Printf("In feed: %v\n", feed.Url)
+				fmt.Println(err.Error())
+				fmt.Println("=============================")
+			}
+		} else {
+			fmt.Println("Saved: ", retPost.Title)
+			fmt.Println("")
+		}
+	}
+
+	return nil
+}
 
 func middlewareLoggedIn(handler func(s *state, cmd command, usr database.User) error) func(*state, command) error {
 	return func(s *state, cmd command) error {
@@ -349,7 +466,7 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 
 	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
 	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
-	for i, _ := range feed.Channel.Item {
+	for i := range feed.Channel.Item {
 		feed.Channel.Item[i].Title = html.UnescapeString(feed.Channel.Item[i].Title)
 		feed.Channel.Item[i].Description = html.UnescapeString(feed.Channel.Item[i].Description)
 	}
@@ -389,6 +506,8 @@ func main() {
 	cmds.register("follow", middlewareLoggedIn(handlerFollow))
 	cmds.register("following", middlewareLoggedIn(handlerFollowing))
 	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
+	cmds.register("test", handlerTest)
 
 	// -- Start
 	if len(os.Args) < 2 {
