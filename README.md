@@ -10,7 +10,8 @@ Installation
 run go install github.com/striderjg/gator@latest
 Create a file '.gatorconfig.json' in your home directory containing:
 {
-  "db_url": "postgres://example"
+  "db_url": "postgres://postgres:PASSWORD@localhost:5432/gator"
+
 }
 register a user with: gator register USERNAME
 
