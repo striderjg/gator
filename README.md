@@ -11,12 +11,56 @@ Installation
 run go install github.com/striderjg/gator@latest
 Create a file '.gatorconfig.json' in your home directory containing:
 {
-  "db_url": "postgres://postgres:PASSWORD@localhost:5432/gator"
+  "db_url": "postgres://{postgresUsername}:{PASSWORD}@localhost:5432/gator"
 
 }
-register a user with: gator register USERNAME
+Create a db in postgres called gator
+Run an .sql file on that database with the following commands:
 
-Dont' know if you have to muck around with migrating the db up. I'll try installing on my laptop later and update.  
+CREATE TABLE users(
+    id UUID PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE feeds(
+    id UUID PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    name TEXT NOT NULL,
+    url TEXT UNIQUE NOT NULL,
+    user_id UUID NOT NULL,
+    CONSTRAINT fk_users FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE feed_follows(
+    id UUID PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    user_id UUID NOT NULL,
+    feed_id UUID NOT NULL,
+    CONSTRAINT fk_users FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_feeds FOREIGN KEY(feed_id) REFERENCES feeds(id) ON DELETE CASCADE,
+    UNIQUE(user_id, feed_id)
+);
+
+ALTER TABLE feeds ADD last_fetched_at TIMESTAMP;
+
+CREATE TABLE posts(
+    id UUID PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT UNIQUE NOT NULL,
+    description TEXT NOT NULL,
+    published_at TIMESTAMP,
+    feed_id UUID NOT NULL,
+    CONSTRAINT fk_feeds FOREIGN KEY(feed_id) REFERENCES feeds(id) ON DELETE CASCADE
+);
+
+curse me for not making an install script
+register a user with: gator register USERNAME
 
 basic usage is: gator COMMAND [Args]
 Available commands are:
